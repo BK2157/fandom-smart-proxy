@@ -10,21 +10,33 @@ export default async function handler(req, res) {
   }
 
   const base = `https://${universe}.fandom.com`;
+  const searchVariants = [topic, topic.split(' ')[0]];
 
-  // Step 1: Search for a valid page
-  const searchUrl = `${base}/api.php?action=opensearch&search=${encodeURIComponent(topic)}&limit=1&format=json`;
+  let pageTitle = null;
 
-  try {
-    const searchRes = await fetch(searchUrl);
-    const searchData = await searchRes.json();
-    const pageTitle = searchData?.[1]?.[0];
+  // Try multiple variants to resolve a valid page
+  for (const variant of searchVariants) {
+    const searchUrl = `${base}/api.php?action=opensearch&search=${encodeURIComponent(variant)}&limit=1&format=json`;
 
-    if (!pageTitle) {
-      return res.status(404).json({ error: `No page found for topic "${topic}"` });
+    try {
+      const searchRes = await fetch(searchUrl);
+      const searchData = await searchRes.json();
+      if (searchData?.[1]?.[0]) {
+        pageTitle = searchData[1][0];
+        break;
+      }
+    } catch (e) {
+      console.error(`Search attempt failed for ${variant}:`, e.message);
     }
+  }
 
-    // Step 2: Fetch and parse the page
-    const contentUrl = `${base}/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=text&format=json`;
+  if (!pageTitle) {
+    return res.status(404).json({ error: `No page found for topic "${topic}"` });
+  }
+
+  // Fetch page content
+  const contentUrl = `${base}/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=text&format=json`;
+  try {
     const pageRes = await fetch(contentUrl);
     const pageData = await pageRes.json();
     const rawHTML = pageData?.parse?.text?.['*'];
@@ -35,7 +47,6 @@ export default async function handler(req, res) {
 
     const plainText = stripHTML(rawHTML);
 
-    // Step 3: Filter content by query
     const lowerQuery = query.toLowerCase();
     const paragraphs = plainText
       .split(/\n|\.\s+/)
@@ -57,7 +68,7 @@ export default async function handler(req, res) {
         : [`No directly relevant content found for "${query}" on page "${pageTitle}".`]
     });
   } catch (e) {
-    console.error('Smart section error:', e);
-    res.status(500).json({ error: 'Internal server error', details: e.message });
+    console.error('Content fetch error:', e.message);
+    return res.status(500).json({ error: 'Internal server error', details: e.message });
   }
 }
