@@ -1,5 +1,9 @@
+function stripHTML(html) {
+  return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export default async function handler(req, res) {
-  const { universe, page } = req.query;
+  const { universe, page, keyword = '' } = req.query;
 
   if (!universe || !page) {
     return res.status(400).json({ error: 'Missing universe or page parameter' });
@@ -17,8 +21,15 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'No sections found' });
     }
 
-    // Get top-level and important subsections
-    const filteredSections = sections.filter(s => s.toclevel <= 2).slice(0, 15);
+    // Filter based on keyword (if given), else return intro/top sections
+    const filteredSections = keyword
+      ? sections.filter(s => s.line.toLowerCase().includes(keyword.toLowerCase()))
+      : sections.filter(s => s.toclevel <= 2).slice(0, 5); // default fallback
+
+    if (filteredSections.length === 0) {
+      return res.status(404).json({ error: `No sections found for keyword "${keyword}"` });
+    }
+
     const sectionContents = [];
 
     for (const section of filteredSections) {
@@ -31,12 +42,13 @@ export default async function handler(req, res) {
         title: section.line,
         level: section.toclevel,
         index: section.index,
-        content: contentHTML || 'No content found'
+        content: stripHTML(contentHTML || 'No content found')
       });
     }
 
     res.status(200).json({
       title: page.replace(/_/g, ' '),
+      keyword: keyword || 'intro',
       sectionCount: sectionContents.length,
       sections: sectionContents
     });
