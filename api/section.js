@@ -17,9 +17,11 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'No sections found' });
     }
 
+    // Get top-level and important subsections
+    const filteredSections = sections.filter(s => s.toclevel <= 2).slice(0, 15);
     const sectionContents = [];
 
-    for (const section of sections) {
+    for (const section of filteredSections) {
       const contentURL = `${base}/api.php?action=parse&page=${page}&prop=text&section=${section.index}&format=json`;
       const contentRes = await fetch(contentURL);
       const contentData = await contentRes.json();
