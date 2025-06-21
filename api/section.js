@@ -1,8 +1,8 @@
 export default async function handler(req, res) {
-  const { universe, page, sectionName } = req.query;
+  const { universe, page } = req.query;
 
-  if (!universe || !page || !sectionName) {
-    return res.status(400).json({ error: 'Missing universe, page, or sectionName' });
+  if (!universe || !page) {
+    return res.status(400).json({ error: 'Missing universe or page parameter' });
   }
 
   const base = `https://${universe}.fandom.com`;
@@ -14,45 +14,29 @@ export default async function handler(req, res) {
     const sections = listData?.parse?.sections;
 
     if (!sections || sections.length === 0) {
-      return res.status(404).json({ error: 'No sections found for this page' });
+      return res.status(404).json({ error: 'No sections found' });
     }
 
-    // Normalize search
-    const searchTerm = sectionName.toLowerCase().trim();
+    const sectionContents = [];
 
-    // Preferred fallback section order
-    const fallbackNames = [
-      searchTerm,
-      'plot', 'background', 'biography', 'story', 'history',
-      'part i', 'part ii', 'arc', 'overview'
-    ];
+    for (const section of sections) {
+      const contentURL = `${base}/api.php?action=parse&page=${page}&prop=text&section=${section.index}&format=json`;
+      const contentRes = await fetch(contentURL);
+      const contentData = await contentRes.json();
+      const contentHTML = contentData?.parse?.text?.['*'];
 
-    // Try to find the best match based on fallbacks
-    const matchedSection = fallbackNames
-      .map(fallback => sections.find(s => s.line.toLowerCase() === fallback))
-      .find(match => match);
-
-    // If no exact match, fallback to contains
-    const fuzzyMatch = !matchedSection
-      ? sections.find(s => fallbackNames.some(f => s.line.toLowerCase().includes(f)))
-      : null;
-
-    const finalSection = matchedSection || fuzzyMatch;
-
-    if (!finalSection) {
-      return res.status(404).json({ error: `Section "${sectionName}" not found` });
+      sectionContents.push({
+        title: section.line,
+        level: section.toclevel,
+        index: section.index,
+        content: contentHTML || 'No content found'
+      });
     }
-
-    // Now fetch the actual section content
-    const sectionContentURL = `${base}/api.php?action=parse&page=${page}&prop=text&section=${finalSection.index}&format=json`;
-    const contentRes = await fetch(sectionContentURL);
-    const contentData = await contentRes.json();
-    const contentHTML = contentData?.parse?.text?.['*'];
 
     res.status(200).json({
       title: page.replace(/_/g, ' '),
-      matchedSection: finalSection.line,
-      content: contentHTML || 'No content found'
+      sectionCount: sectionContents.length,
+      sections: sectionContents
     });
   } catch (error) {
     console.error('Error:', error);
